@@ -2,6 +2,7 @@
 #include "music/player.h"
 #include "music/playlist.h"
 #include "music/config.h"
+#include "music/mpris.h"
 
 typedef struct {
     GtkWindow *window;
@@ -10,6 +11,7 @@ typedef struct {
     GtkButton *play_button;
     MusicPlayer *player;
     MusicPlaylist *playlist;
+    MusicMpris *mpris;
     MusicConfig config;
     GtkScale *progress_scale;
     GtkScale *volume_scale;
@@ -96,16 +98,16 @@ static void music_window_on_settings_sort_changed(GObject *object, GParamSpec *p
     if (selected <= 3) music_window_apply_sort(state, (MusicPlaylistSort)(selected + 1));
 }
 
+
 static void music_window_show_settings(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     (void) action;
     (void) parameter;
 
     MusicWindowState *state = user_data;
-    AdwPreferencesWindow *preferences = ADW_PREFERENCES_WINDOW(adw_preferences_window_new());
-    gtk_window_set_transient_for(GTK_WINDOW(preferences), state->window);
-    gtk_window_set_modal(GTK_WINDOW(preferences), TRUE);
-    gtk_window_set_title(GTK_WINDOW(preferences), "Ayarlar");
+    AdwPreferencesDialog *preferences = ADW_PREFERENCES_DIALOG(adw_preferences_dialog_new());
+
+    adw_dialog_set_title(ADW_DIALOG(preferences), "Ayarlar");
 
     AdwPreferencesPage *page = ADW_PREFERENCES_PAGE(adw_preferences_page_new());
     AdwPreferencesGroup *group = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
@@ -113,15 +115,18 @@ static void music_window_show_settings(GSimpleAction *action, GVariant *paramete
 
     GtkStringList *sort_model = gtk_string_list_new((const gchar * const[]) { "A-Z", "Z-A", "En yeni önce", "En eski önce", NULL });
     AdwComboRow *sort_row = ADW_COMBO_ROW(adw_combo_row_new());
+
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(sort_row), "Sıralama");
     adw_combo_row_set_model(sort_row, G_LIST_MODEL(sort_model));
     adw_combo_row_set_selected(sort_row, CLAMP(state->config.sort - 1, 0, 3));
+
     g_signal_connect(sort_row, "notify::selected", G_CALLBACK(music_window_on_settings_sort_changed), state);
 
     adw_preferences_group_add(group, GTK_WIDGET(sort_row));
     adw_preferences_page_add(page, group);
-    adw_preferences_window_add(preferences, page);
-    gtk_window_present(GTK_WINDOW(preferences));
+    adw_preferences_dialog_add(preferences, page);
+
+    adw_dialog_present(ADW_DIALOG(preferences), GTK_WIDGET(state->window));
 
     g_object_unref(sort_model);
 }
@@ -171,6 +176,7 @@ static void music_window_play_current(MusicWindowState *state)
 
     music_player_play(state->player);
     music_window_update_current_label(state);
+    music_mpris_update(state->mpris);
 }
 
 static void music_window_save_playlist(MusicWindowState *state)
@@ -286,6 +292,7 @@ static void music_window_on_player_state_changed(MusicPlayer *player, gint playe
 
     gtk_button_set_icon_name(state->play_button, playing ? "media-playback-pause-symbolic" : "media-playback-start-symbolic");
     gtk_widget_set_tooltip_text(GTK_WIDGET(state->play_button), playing ? "Duraklat" : "Oynat");
+    music_mpris_update(state->mpris);
 }
 
 static void music_window_on_eos(MusicPlayer *player, gpointer user_data)
@@ -300,6 +307,8 @@ static void music_window_on_eos(MusicPlayer *player, gpointer user_data)
         gtk_button_set_icon_name(state->play_button, "media-playback-start-symbolic");
         gtk_widget_set_tooltip_text(GTK_WIDGET(state->play_button), "Oynat");
     }
+
+    music_mpris_update(state->mpris);
 }
 
 static void music_window_on_player_error(MusicPlayer *player, const gchar *message, gpointer user_data)
@@ -397,6 +406,7 @@ static void music_window_state_free(gpointer data)
 
     music_config_save(&state->config, NULL);
     music_config_clear(&state->config);
+    g_clear_object(&state->mpris);
     g_clear_object(&state->player);
     music_playlist_free(state->playlist);
     g_free(state);
@@ -409,6 +419,7 @@ GtkWindow *music_window_new(GtkApplication *app)
 
     state->player = music_player_new();
     state->playlist = music_playlist_new();
+    state->mpris = music_mpris_new(state->player, state->playlist);
 
     music_config_init(&state->config);
     music_config_load(&state->config);
@@ -418,23 +429,22 @@ GtkWindow *music_window_new(GtkApplication *app)
 
     gtk_window_set_title(GTK_WINDOW(window), "Music");
     gtk_window_set_default_size(GTK_WINDOW(window), 1000, 680);
-
     g_object_set_data_full(G_OBJECT(window), "music-state", state, music_window_state_free);
 
-const GActionEntry window_actions[] = {
-    { .name = "preferences", .activate = music_window_show_settings },
-    { .name = "sort-asc", .activate = music_window_on_sort_action },
-    { .name = "sort-desc", .activate = music_window_on_sort_action },
-    { .name = "sort-newest", .activate = music_window_on_sort_action },
-    { .name = "sort-oldest", .activate = music_window_on_sort_action },
-    { .name = "remove-selected", .activate = music_window_on_remove_selected },
-    { .name = "clear-playlist", .activate = music_window_on_clear_playlist }
-};
+    const GActionEntry window_actions[] = {
+        { .name = "preferences", .activate = music_window_show_settings },
+        { .name = "sort-asc", .activate = music_window_on_sort_action },
+        { .name = "sort-desc", .activate = music_window_on_sort_action },
+        { .name = "sort-newest", .activate = music_window_on_sort_action },
+        { .name = "sort-oldest", .activate = music_window_on_sort_action },
+        { .name = "remove-selected", .activate = music_window_on_remove_selected },
+        { .name = "clear-playlist", .activate = music_window_on_clear_playlist }
+    };
 
-GSimpleActionGroup *action_group = g_simple_action_group_new();
-g_action_map_add_action_entries(G_ACTION_MAP(action_group), window_actions, G_N_ELEMENTS(window_actions), state);
-gtk_widget_insert_action_group(GTK_WIDGET(window), "win", G_ACTION_GROUP(action_group));
-g_object_unref(action_group);
+    GSimpleActionGroup *action_group = g_simple_action_group_new();
+    g_action_map_add_action_entries(G_ACTION_MAP(action_group), window_actions, G_N_ELEMENTS(window_actions), state);
+    gtk_widget_insert_action_group(GTK_WIDGET(window), "win", G_ACTION_GROUP(action_group));
+    g_object_unref(action_group);
 
     g_signal_connect(state->player, "state-changed", G_CALLBACK(music_window_on_player_state_changed), state);
     g_signal_connect(state->player, "eos", G_CALLBACK(music_window_on_eos), state);
@@ -469,19 +479,19 @@ g_object_unref(action_group);
     gtk_widget_set_size_request(sidebar_box, 220, -1);
 
     GtkWidget *sidebar_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-gtk_widget_set_margin_start(sidebar_header, 18);
-gtk_widget_set_margin_end(sidebar_header, 12);
-gtk_widget_set_margin_top(sidebar_header, 12);
-gtk_widget_set_margin_bottom(sidebar_header, 6);
+    gtk_widget_set_margin_start(sidebar_header, 18);
+    gtk_widget_set_margin_end(sidebar_header, 12);
+    gtk_widget_set_margin_top(sidebar_header, 12);
+    gtk_widget_set_margin_bottom(sidebar_header, 6);
 
-GtkWidget *sidebar_title = gtk_label_new("Çalma Listesi");
-gtk_widget_add_css_class(sidebar_title, "heading");
-gtk_widget_set_hexpand(sidebar_title, TRUE);
-gtk_widget_set_halign(sidebar_title, GTK_ALIGN_START);
+    GtkWidget *sidebar_title = gtk_label_new("Çalma Listesi");
+    gtk_widget_add_css_class(sidebar_title, "heading");
+    gtk_widget_set_hexpand(sidebar_title, TRUE);
+    gtk_widget_set_halign(sidebar_title, GTK_ALIGN_START);
 
-gtk_box_append(GTK_BOX(sidebar_header), sidebar_title);
-gtk_box_append(GTK_BOX(sidebar_header), music_window_create_playlist_menu());
-gtk_box_append(GTK_BOX(sidebar_box), sidebar_header);
+    gtk_box_append(GTK_BOX(sidebar_header), sidebar_title);
+    gtk_box_append(GTK_BOX(sidebar_header), music_window_create_playlist_menu());
+    gtk_box_append(GTK_BOX(sidebar_box), sidebar_header);
 
     state->list_box = GTK_LIST_BOX(gtk_list_box_new());
     gtk_list_box_set_selection_mode(state->list_box, GTK_SELECTION_SINGLE);
@@ -541,9 +551,9 @@ gtk_box_append(GTK_BOX(sidebar_box), sidebar_header);
 
     state->volume_scale = GTK_SCALE(gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.01));
     gtk_widget_set_size_request(GTK_WIDGET(state->volume_scale), 120, -1);
-    gtk_range_set_value(GTK_RANGE(state->volume_scale), state->config.volume);
+    gtk_range_set_value(GTK_RANGE(state->volume_scale), CLAMP(state->config.volume, 0.0, 1.0));
     gtk_scale_set_draw_value(state->volume_scale, FALSE);
-    music_player_set_volume(state->player, state->config.volume);
+    music_player_set_volume(state->player, CLAMP(state->config.volume, 0.0, 1.0));
     gtk_box_append(GTK_BOX(player_box), GTK_WIDGET(state->volume_scale));
 
     gtk_box_append(GTK_BOX(main_box), player_box);
@@ -566,15 +576,22 @@ gtk_box_append(GTK_BOX(sidebar_box), sidebar_header);
     adw_toolbar_view_set_content(toolbar_view, GTK_WIDGET(split_view));
     adw_application_window_set_content(window, GTK_WIDGET(toolbar_view));
 
-    /* Kaydedilmiş müzik dizinini yükle */
+    /* Kaydedilmiş müzik dizinini ve çalma listesini yükle */
     if (state->config.directory != NULL && g_file_test(state->config.directory, G_FILE_TEST_IS_DIR)) {
-        if (music_playlist_load_directory(state->playlist, state->config.directory, NULL)) {
-    if (state->config.playlist_saved) music_playlist_restore(state->playlist, (const gchar * const *)state->config.custom_order, state->config.custom_order_length);
-    else music_window_save_playlist(state);
+        g_autoptr(GError) load_error = NULL;
 
-    if (state->config.sort != MUSIC_PLAYLIST_SORT_CUSTOM) music_playlist_sort(state->playlist, state->config.sort);
+        if (music_playlist_load_directory(state->playlist, state->config.directory, &load_error)) {
+            if (state->config.playlist_saved) {
+                music_playlist_restore(state->playlist, (const gchar * const *)state->config.custom_order, state->config.custom_order_length);
+            } else {
+                music_window_save_playlist(state);
+            }
 
-    music_window_refresh_playlist(state);
+            if (state->config.sort != MUSIC_PLAYLIST_SORT_CUSTOM) {
+                music_playlist_sort(state->playlist, state->config.sort);
+            }
+
+            music_window_refresh_playlist(state);
 
             for (guint i = 0; i < music_playlist_get_count(state->playlist); i++) {
                 const gchar *track = music_playlist_get_track(state->playlist, i);
@@ -585,7 +602,16 @@ gtk_box_append(GTK_BOX(sidebar_box), sidebar_header);
             }
 
             music_window_update_current_label(state);
+        } else {
+            g_warning("Kaydedilmiş müzik dizini yüklenemedi: %s", load_error->message);
         }
+    }
+
+    g_autoptr(GError) mpris_error = NULL;
+    if (!music_mpris_start(state->mpris, &mpris_error)) {
+        g_warning("MPRIS başlatılamadı: %s", mpris_error != NULL ? mpris_error->message : "Bilinmeyen hata");
+    } else {
+        music_mpris_update(state->mpris);
     }
 
     state->update_timer_id = g_timeout_add(250, music_window_update_progress, state);
@@ -632,6 +658,8 @@ static gboolean music_window_on_seek(GtkRange *range, GtkScrollType scroll, gdou
     MusicWindowState *state = user_data;
     music_player_seek(state->player, (gint64) (value * GST_SECOND));
 
+    music_mpris_update(state->mpris);
+
     return FALSE;
 }
 
@@ -642,6 +670,8 @@ static void music_window_on_volume_changed(GtkRange *range, gpointer user_data)
 
     music_player_set_volume(state->player, volume);
     state->config.volume = volume;
+    music_config_save(&state->config, NULL);
+    music_mpris_update(state->mpris);
 }
 
 static GtkWidget *music_window_create_menu(void)

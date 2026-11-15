@@ -7,6 +7,12 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Installation prefix" FORCE)
+endif()
+
+include(GNUInstallDirs)
+
 include(GNUInstallDirs)
 
 find_package(PkgConfig REQUIRED)
@@ -14,6 +20,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET gtk4)
 pkg_check_modules(ADWAITA REQUIRED IMPORTED_TARGET libadwaita-1)
 pkg_check_modules(GSTREAMER REQUIRED IMPORTED_TARGET gstreamer-1.0)
+pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
 
 add_executable(Music
     src/main.c
@@ -31,6 +38,7 @@ target_link_libraries(Music PRIVATE
     PkgConfig::GTK4
     PkgConfig::ADWAITA
     PkgConfig::GSTREAMER
+    PkgConfig::GIO
 )
 
 target_compile_options(Music PRIVATE -Wall -Wextra -Wpedantic)

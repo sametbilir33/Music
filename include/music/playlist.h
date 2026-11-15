@@ -7,7 +7,8 @@ G_BEGIN_DECLS
 
 typedef enum {
     MUSIC_PLAYLIST_MODE_DIRECTORY,
-    MUSIC_PLAYLIST_MODE_SINGLE
+    MUSIC_PLAYLIST_MODE_SINGLE,
+    MUSIC_PLAYLIST_MODE_MULTIPLE
 } MusicPlaylistMode;
 
 typedef enum {
@@ -26,6 +27,7 @@ void music_playlist_free(MusicPlaylist *playlist);
 gboolean music_playlist_load_directory(MusicPlaylist *playlist, const gchar *path, GError **error);
 gboolean music_playlist_open_single(MusicPlaylist *playlist, const gchar *path, GError **error);
 void music_playlist_return_to_directory(MusicPlaylist *playlist);
+gboolean music_playlist_open_multiple(MusicPlaylist *playlist, const gchar * const *paths, gsize count, GError **error);
 
 const gchar *music_playlist_get_current(MusicPlaylist *playlist);
 const gchar *music_playlist_get_track(MusicPlaylist *playlist, guint index);

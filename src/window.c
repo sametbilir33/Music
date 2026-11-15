@@ -267,9 +267,9 @@ static void music_window_on_previous(GtkButton *button, gpointer user_data)
 
     MusicWindowState *state = user_data;
 
-    if (music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY && music_playlist_previous(state->playlist)) {
-        music_window_play_current(state);
-    }
+    if ((music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY || music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_MULTIPLE) && music_playlist_previous(state->playlist)) {
+    music_window_play_current(state);
+}
 }
 
 static void music_window_on_next(GtkButton *button, gpointer user_data)
@@ -278,9 +278,9 @@ static void music_window_on_next(GtkButton *button, gpointer user_data)
 
     MusicWindowState *state = user_data;
 
-    if (music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY && music_playlist_next(state->playlist)) {
-        music_window_play_current(state);
-    }
+    if ((music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY || music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_MULTIPLE) && music_playlist_next(state->playlist)) {
+    music_window_play_current(state);
+}
 }
 
 static void music_window_on_player_state_changed(MusicPlayer *player, gint player_state, gpointer user_data)
@@ -301,12 +301,12 @@ static void music_window_on_eos(MusicPlayer *player, gpointer user_data)
 
     MusicWindowState *state = user_data;
 
-    if (music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY && music_playlist_next(state->playlist)) {
-        music_window_play_current(state);
-    } else {
-        gtk_button_set_icon_name(state->play_button, "media-playback-start-symbolic");
-        gtk_widget_set_tooltip_text(GTK_WIDGET(state->play_button), "Oynat");
-    }
+    if ((music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY || music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_MULTIPLE) && music_playlist_next(state->playlist)) {
+    music_window_play_current(state);
+} else {
+    gtk_button_set_icon_name(state->play_button, "media-playback-start-symbolic");
+    gtk_widget_set_tooltip_text(GTK_WIDGET(state->play_button), "Oynat");
+}
 
     music_mpris_update(state->mpris);
 }
@@ -712,4 +712,58 @@ static GtkWidget *music_window_create_playlist_menu(void)
     g_object_unref(sort_menu);
     g_object_unref(menu);
     return button;
+}
+
+void music_window_open_files(GtkWindow *window, GFile **files, gint n_files)
+{
+    g_return_if_fail(GTK_IS_WINDOW(window));
+    g_return_if_fail(files != NULL);
+    g_return_if_fail(n_files > 0);
+
+    MusicWindowState *state = g_object_get_data(G_OBJECT(window), "music-state");
+    if (state == NULL) return;
+
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GPtrArray) paths = g_ptr_array_new_with_free_func(g_free);
+
+    for (gint i = 0; i < n_files; i++) {
+        gchar *path = g_file_get_path(files[i]);
+        if (path == NULL) {
+            music_window_show_error(state, "Yalnızca yerel dosyalar açılabilir.");
+            return;
+        }
+        g_ptr_array_add(paths, path);
+    }
+
+    if (paths->len == 1 && g_file_test(g_ptr_array_index(paths, 0), G_FILE_TEST_IS_DIR)) {
+        const gchar *path = g_ptr_array_index(paths, 0);
+        if (!music_playlist_load_directory(state->playlist, path, &error)) {
+            music_window_show_error(state, error->message);
+            return;
+        }
+        g_free(state->config.directory);
+        state->config.directory = g_strdup(path);
+        g_clear_pointer(&state->config.last_track, g_free);
+        music_window_save_playlist(state);
+        music_window_refresh_playlist(state);
+        music_window_update_current_label(state);
+        music_config_save(&state->config, NULL);
+        return;
+    }
+
+    if (paths->len == 1) {
+        const gchar *path = g_ptr_array_index(paths, 0);
+        if (!music_playlist_open_single(state->playlist, path, &error)) {
+            music_window_show_error(state, error->message);
+            return;
+        }
+    } else {
+        if (!music_playlist_open_multiple(state->playlist, (const gchar * const *)paths->pdata, paths->len, &error)) {
+            music_window_show_error(state, error->message);
+            return;
+        }
+        music_window_refresh_playlist(state);
+    }
+
+    music_window_play_current(state);
 }

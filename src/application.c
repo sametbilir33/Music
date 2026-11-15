@@ -64,15 +64,24 @@ void music_application_activate(GtkApplication *app, gpointer user_data)
             { .name = "about", .activate = music_application_show_about },
             { .name = "shortcuts", .activate = music_application_show_shortcuts }
         };
-
         g_action_map_add_action_entries(G_ACTION_MAP(app), entries, G_N_ELEMENTS(entries), app);
-
         const gchar *shortcuts_accels[] = { "<Control>question", NULL };
         const gchar *about_accels[] = { "<Control>comma", NULL };
         gtk_application_set_accels_for_action(app, "app.shortcuts", shortcuts_accels);
         gtk_application_set_accels_for_action(app, "app.about", about_accels);
     }
 
-    GtkWindow *window = music_window_new(app);
+    GtkWindow *window = gtk_application_get_active_window(app);
+    if (window == NULL) window = music_window_new(app);
     gtk_window_present(window);
+}
+
+void music_application_open(GApplication *app, GFile **files, gint n_files, const gchar *hint, gpointer user_data)
+{
+    (void) hint;
+    (void) user_data;
+
+    music_application_activate(GTK_APPLICATION(app), NULL);
+    GtkWindow *window = gtk_application_get_active_window(GTK_APPLICATION(app));
+    if (window != NULL) music_window_open_files(window, files, n_files);
 }

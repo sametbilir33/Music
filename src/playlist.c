@@ -11,6 +11,8 @@ struct _MusicPlaylist {
     guint current_index;
     MusicPlaylistMode mode;
     MusicPlaylistSort sort;
+    GPtrArray *multiple_tracks;
+    guint multiple_index;
 };
 
 static gboolean music_playlist_is_audio(const gchar *filename)
@@ -50,6 +52,7 @@ MusicPlaylist *music_playlist_new(void)
 {
     MusicPlaylist *playlist = g_new0(MusicPlaylist, 1);
     playlist->tracks = g_ptr_array_new_with_free_func(g_free);
+    playlist->multiple_tracks = g_ptr_array_new_with_free_func(g_free);
     playlist->mode = MUSIC_PLAYLIST_MODE_DIRECTORY;
     playlist->sort = MUSIC_PLAYLIST_SORT_NAME_ASC;
     return playlist;
@@ -61,6 +64,7 @@ void music_playlist_free(MusicPlaylist *playlist)
     g_ptr_array_unref(playlist->tracks);
     g_free(playlist->directory);
     g_free(playlist->single_track);
+    g_ptr_array_unref(playlist->multiple_tracks);
     g_free(playlist);
 }
 
@@ -94,6 +98,8 @@ gboolean music_playlist_load_directory(MusicPlaylist *playlist, const gchar *pat
     g_ptr_array_sort_with_data(new_tracks, music_playlist_compare, GINT_TO_POINTER(MUSIC_PLAYLIST_SORT_NAME_ASC));
     g_ptr_array_unref(playlist->tracks);
     playlist->tracks = new_tracks;
+    g_ptr_array_set_size(playlist->multiple_tracks, 0);
+    playlist->multiple_index = 0;
     g_free(playlist->directory);
     playlist->directory = g_canonicalize_filename(path, NULL);
     playlist->current_index = 0;
@@ -116,6 +122,53 @@ gboolean music_playlist_open_single(MusicPlaylist *playlist, const gchar *path, 
     g_free(playlist->single_track);
     playlist->single_track = uri;
     playlist->mode = MUSIC_PLAYLIST_MODE_SINGLE;
+    g_ptr_array_set_size(playlist->multiple_tracks, 0);
+    playlist->multiple_index = 0;
+    return TRUE;
+}
+
+gboolean music_playlist_open_multiple(MusicPlaylist *playlist, const gchar * const *paths, gsize count, GError **error)
+{
+    g_return_val_if_fail(playlist != NULL, FALSE);
+    g_return_val_if_fail(paths != NULL, FALSE);
+
+    GPtrArray *new_tracks = g_ptr_array_new_with_free_func(g_free);
+
+    for (gsize i = 0; i < count; i++) {
+        if (paths[i] == NULL || !g_file_test(paths[i], G_FILE_TEST_IS_REGULAR)) {
+            g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_NOENT, "Dosya bulunamadı: %s", paths[i] != NULL ? paths[i] : "(null)");
+            g_ptr_array_unref(new_tracks);
+            return FALSE;
+        }
+
+        GStatBuf file_stat;
+        if (g_stat(paths[i], &file_stat) != 0 || file_stat.st_size <= 0 || !music_playlist_is_audio(paths[i])) {
+            g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Geçersiz veya boş müzik dosyası: %s", paths[i]);
+            g_ptr_array_unref(new_tracks);
+            return FALSE;
+        }
+
+        gchar *uri = g_filename_to_uri(paths[i], NULL, error);
+        if (uri == NULL) {
+            g_ptr_array_unref(new_tracks);
+            return FALSE;
+        }
+
+        g_ptr_array_add(new_tracks, uri);
+    }
+
+    if (new_tracks->len == 0) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Açılacak müzik dosyası bulunamadı.");
+        g_ptr_array_unref(new_tracks);
+        return FALSE;
+    }
+
+    g_ptr_array_set_size(playlist->multiple_tracks, 0);
+    g_ptr_array_unref(playlist->multiple_tracks);
+    playlist->multiple_tracks = new_tracks;
+    playlist->multiple_index = 0;
+    playlist->mode = MUSIC_PLAYLIST_MODE_MULTIPLE;
+    g_clear_pointer(&playlist->single_track, g_free);
     return TRUE;
 }
 
@@ -124,18 +177,22 @@ void music_playlist_return_to_directory(MusicPlaylist *playlist)
     g_return_if_fail(playlist != NULL);
     playlist->mode = MUSIC_PLAYLIST_MODE_DIRECTORY;
     g_clear_pointer(&playlist->single_track, g_free);
+    g_ptr_array_set_size(playlist->multiple_tracks, 0);
+    playlist->multiple_index = 0;
 }
 
 const gchar *music_playlist_get_current(MusicPlaylist *playlist)
 {
     g_return_val_if_fail(playlist != NULL, NULL);
     if (playlist->mode == MUSIC_PLAYLIST_MODE_SINGLE) return playlist->single_track;
+    if (playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE) return playlist->multiple_index < playlist->multiple_tracks->len ? g_ptr_array_index(playlist->multiple_tracks, playlist->multiple_index) : NULL;
     return playlist->current_index < playlist->tracks->len ? g_ptr_array_index(playlist->tracks, playlist->current_index) : NULL;
 }
 
 const gchar *music_playlist_get_track(MusicPlaylist *playlist, guint index)
 {
     g_return_val_if_fail(playlist != NULL, NULL);
+    if (playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE) return index < playlist->multiple_tracks->len ? g_ptr_array_index(playlist->multiple_tracks, index) : NULL;
     return index < playlist->tracks->len ? g_ptr_array_index(playlist->tracks, index) : NULL;
 }
 
@@ -148,6 +205,11 @@ const gchar *music_playlist_get_directory(MusicPlaylist *playlist)
 gboolean music_playlist_next(MusicPlaylist *playlist)
 {
     g_return_val_if_fail(playlist != NULL, FALSE);
+    if (playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE) {
+        if (playlist->multiple_index + 1 >= playlist->multiple_tracks->len) return FALSE;
+        playlist->multiple_index++;
+        return TRUE;
+    }
     if (playlist->mode != MUSIC_PLAYLIST_MODE_DIRECTORY || playlist->current_index + 1 >= playlist->tracks->len) return FALSE;
     playlist->current_index++;
     return TRUE;
@@ -156,6 +218,11 @@ gboolean music_playlist_next(MusicPlaylist *playlist)
 gboolean music_playlist_previous(MusicPlaylist *playlist)
 {
     g_return_val_if_fail(playlist != NULL, FALSE);
+    if (playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE) {
+        if (playlist->multiple_index == 0) return FALSE;
+        playlist->multiple_index--;
+        return TRUE;
+    }
     if (playlist->mode != MUSIC_PLAYLIST_MODE_DIRECTORY || playlist->current_index == 0) return FALSE;
     playlist->current_index--;
     return TRUE;
@@ -164,6 +231,11 @@ gboolean music_playlist_previous(MusicPlaylist *playlist)
 gboolean music_playlist_set_index(MusicPlaylist *playlist, guint index)
 {
     g_return_val_if_fail(playlist != NULL, FALSE);
+    if (playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE) {
+        if (index >= playlist->multiple_tracks->len) return FALSE;
+        playlist->multiple_index = index;
+        return TRUE;
+    }
     if (playlist->mode != MUSIC_PLAYLIST_MODE_DIRECTORY || index >= playlist->tracks->len) return FALSE;
     playlist->current_index = index;
     return TRUE;
@@ -222,7 +294,7 @@ MusicPlaylistSort music_playlist_get_sort(MusicPlaylist *playlist)
 guint music_playlist_get_count(MusicPlaylist *playlist)
 {
     g_return_val_if_fail(playlist != NULL, 0);
-    return playlist->tracks->len;
+    return playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE ? playlist->multiple_tracks->len : playlist->tracks->len;
 }
 
 guint music_playlist_get_index(MusicPlaylist *playlist)

@@ -1,0 +1,86 @@
+
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sametbilir33.Music</id>
+
+  <name>Music</name>
+  <summary>A simple and modern music player for Linux</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+
+  <developer id="io.github.sametbilir33">
+    <name>Samet Bilir</name>
+  </developer>
+
+  <description>
+    <p>
+      Music is a native Linux music player built with C, GTK4,
+      Libadwaita, and GStreamer. Its clean and modern interface
+      provides a simple way to enjoy your local music collection.
+    </p>
+    <p>
+      Browse music from a selected directory or open individual
+      audio files independently. Manage your playlist, organize
+      tracks, and control playback with an interface designed
+      for the GNOME desktop environment.
+    </p>
+    <ul>
+      <li>Browse and play music from selected directories</li>
+      <li>Open and play individual audio files</li>
+      <li>Play, pause, and stop playback</li>
+      <li>Skip to the previous or next track</li>
+      <li>Manage playlists by removing tracks or clearing the list</li>
+      <li>Sort tracks alphabetically or by modification date</li>
+      <li>Control playback volume and position</li>
+      <li>Remember the last selected music directory</li>
+      <li>Save playlist and application preferences</li>
+      <li>Integrate with desktop media controls through MPRIS</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">
+    io.github.sametbilir33.Music.desktop
+  </launchable>
+
+  <icon type="stock">
+    io.github.sametbilir33.Music
+  </icon>
+
+  <categories>
+    <category>Audio</category>
+    <category>Music</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>audio player</keyword>
+    <keyword>music player</keyword>
+    <keyword>audio</keyword>
+    <keyword>playlist</keyword>
+    <keyword>local music</keyword>
+    <keyword>GStreamer</keyword>
+    <keyword>GNOME</keyword>
+    <keyword xml:lang="tr">müzik</keyword>
+    <keyword xml:lang="tr">müzik çalar</keyword>
+    <keyword xml:lang="tr">ses oynatıcı</keyword>
+    <keyword xml:lang="tr">çalma listesi</keyword>
+  </keywords>
+
+  <provides>
+    <binary>Music</binary>
+  </provides>
+
+  <url type="homepage">
+    https://github.com/sametbilir33/Music
+  </url>
+  <url type="bugtracker">
+    https://github.com/sametbilir33/Music/issues
+  </url>
+  <url type="vcs-browser">
+    https://github.com/sametbilir33/Music
+  </url>
+
+  <content_rating type="oars-1.1"/>
+</component>

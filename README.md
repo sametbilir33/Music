@@ -1,7 +1,5 @@
 <h1>
-  <img src="data/icons/hicolor/scalable/apps/io.github.sametbilir33.Music_Title.svg"
-       width="48" height="48"
-       style="vertical-align: -12px;" />
+  <img src="data/icons/hicolor/scalable/apps/io.github.sametbilir33.Music_Title.svg" style="vertical-align: -12px;" />
 </h1>
 
 # Music

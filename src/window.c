@@ -352,23 +352,35 @@ static void music_window_on_file_selected(GObject *source, GAsyncResult *result,
 {
     MusicWindowState *state = user_data;
     g_autoptr(GError) error = NULL;
-    g_autoptr(GFile) file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(source), result, &error);
+    g_autoptr(GListModel) files = gtk_file_dialog_open_multiple_finish(GTK_FILE_DIALOG(source), result, &error);
 
-    if (file == NULL) {
-        if (error != NULL && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    if (files == NULL) {
+        if (error != NULL && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
             music_window_show_error(state, error->message);
-        }
-
         return;
     }
 
-    g_autofree gchar *path = g_file_get_path(file);
+    g_autoptr(GPtrArray) paths = g_ptr_array_new_with_free_func(g_free);
+    guint count = g_list_model_get_n_items(files);
 
-    if (!music_playlist_open_single(state->playlist, path, &error)) {
+    for (guint i = 0; i < count; i++) {
+        g_autoptr(GFile) file = g_list_model_get_item(files, i);
+        g_autofree gchar *path = g_file_get_path(file);
+
+        if (path == NULL) {
+            music_window_show_error(state, "Yerel müzik dosyaları seçilmelidir.");
+            return;
+        }
+
+        g_ptr_array_add(paths, g_strdup(path));
+    }
+
+    if (!music_playlist_open_multiple(state->playlist, (const gchar * const *)paths->pdata, paths->len, &error)) {
         music_window_show_error(state, error->message);
         return;
     }
 
+    music_window_refresh_playlist(state);
     music_window_play_current(state);
 }
 
@@ -393,7 +405,7 @@ static void music_window_on_open_file(GtkButton *button, gpointer user_data)
     GtkFileDialog *dialog = gtk_file_dialog_new();
 
     gtk_file_dialog_set_title(dialog, "Müzik dosyası aç");
-    gtk_file_dialog_open(dialog, state->window, NULL, music_window_on_file_selected, state);
+    gtk_file_dialog_open_multiple(dialog, state->window, NULL, music_window_on_file_selected, state);
 
     g_object_unref(dialog);
 }

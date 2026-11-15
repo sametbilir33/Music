@@ -1,6 +1,8 @@
 
 # Music
 
+![Music](data/icons/hicolor/scalable/apps/io.github.sametbilir33.Music.svg)
+
 **Music** is a native Linux music player built with C, GTK4, Libadwaita, and GStreamer.
 
 ## Features

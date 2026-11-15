@@ -1,4 +1,7 @@
-# Music ![Music](data/icons/hicolor/scalable/apps/io.github.sametbilir33.Music.svg)
+<h1>
+  <img src="data/icons/hicolor/scalable/apps/io.github.sametbilir33.Music.svg" width="32" height="32" alt="Music icon" />
+  Music
+</h1>
 
 **Music** is a native Linux music player built with C, GTK4, Libadwaita, and GStreamer.
 

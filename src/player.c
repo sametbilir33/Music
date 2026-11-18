@@ -1,12 +1,13 @@
-
 #include "music/player.h"
 
 struct _MusicPlayer {
     GObject parent_instance;
     GstElement *pipeline;
+    GstElement *spectrum_element;
     GstBus *bus;
     gchar *current_uri;
     MusicPlayerState state;
+    gdouble spectrum[MUSIC_SPECTRUM_BANDS];
     guint bus_watch_id;
 };
 
@@ -45,6 +46,31 @@ static gboolean music_player_bus_callback(GstBus *bus, GstMessage *message, gpoi
             break;
         }
 
+        case GST_MESSAGE_ELEMENT: {
+    const GstStructure *structure = gst_message_get_structure(message);
+
+    if (structure != NULL && gst_structure_has_name(structure, "spectrum")) {
+        const GValue *magnitudes = gst_structure_get_value(structure, "magnitude");
+
+        if (magnitudes != NULL && GST_VALUE_HOLDS_LIST(magnitudes)) {
+            guint count = MIN(gst_value_list_get_size(magnitudes), MUSIC_SPECTRUM_BANDS);
+
+            for (guint i = 0; i < MUSIC_SPECTRUM_BANDS; i++) {
+                const GValue *value = i < count ? gst_value_list_get_value(magnitudes, i) : NULL;
+
+                if (value != NULL && G_VALUE_HOLDS_FLOAT(value)) {
+                    gdouble db = g_value_get_float(value);
+                    player->spectrum[i] = CLAMP((db + 80.0) / 80.0, 0.0, 1.0);
+                } else {
+                    player->spectrum[i] = 0.0;
+                }
+            }
+        }
+    }
+
+    break;
+}
+
         default:
             break;
     }
@@ -77,6 +103,7 @@ static void music_player_dispose(GObject *object)
         g_clear_object(&player->pipeline);
     }
 
+    g_clear_object(&player->spectrum_element);
     g_clear_object(&player->bus);
 
     G_OBJECT_CLASS(music_player_parent_class)->dispose(object);
@@ -117,6 +144,16 @@ static void music_player_init(MusicPlayer *player)
 
     player->bus = gst_element_get_bus(player->pipeline);
     player->bus_watch_id = gst_bus_add_watch(player->bus, music_player_bus_callback, player);
+
+    player->spectrum_element = gst_element_factory_make("spectrum", "music-spectrum");
+
+if (player->spectrum_element != NULL) {
+    gst_object_ref_sink(player->spectrum_element);
+    g_object_set(player->spectrum_element, "bands", MUSIC_SPECTRUM_BANDS, "interval", (guint64)(30 * GST_MSECOND), "threshold", -80, "post-messages", TRUE, "message-magnitude", TRUE, "message-phase", FALSE, NULL);
+    g_object_set(player->pipeline, "audio-filter", player->spectrum_element, NULL);
+} else {
+    g_warning("GStreamer spectrum eklentisi oluşturulamadı.");
+}
 }
 
 MusicPlayer *music_player_new(void)
@@ -271,4 +308,10 @@ const gchar *music_player_get_current_uri(MusicPlayer *player)
     g_return_val_if_fail(MUSIC_IS_PLAYER(player), NULL);
 
     return player->current_uri;
+}
+
+const gdouble *music_player_get_spectrum(MusicPlayer *player)
+{
+    g_return_val_if_fail(MUSIC_IS_PLAYER(player), NULL);
+    return player->spectrum;
 }

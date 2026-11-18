@@ -25,6 +25,7 @@ add_executable(Music
     src/application.c
     src/window.c
     src/player.c
+    src/visualizer.c
     src/playlist.c
     src/config.c
     src/mpris.c

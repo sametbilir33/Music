@@ -1,5 +1,6 @@
 #include "music/window.h"
 #include "music/player.h"
+#include "music/visualizer.h"
 #include "music/playlist.h"
 #include "music/config.h"
 #include "music/mpris.h"
@@ -544,6 +545,11 @@ GtkWindow *music_window_new(GtkApplication *app)
     state->time_label = GTK_LABEL(gtk_label_new("00:00 / 00:00"));
     gtk_widget_set_halign(GTK_WIDGET(state->time_label), GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(main_box), GTK_WIDGET(state->time_label));
+
+    GtkWidget *visualizer = music_visualizer_new(state->player);
+    gtk_widget_set_margin_top(visualizer, 8);
+    gtk_widget_set_margin_bottom(visualizer, 8);
+    gtk_box_append(GTK_BOX(main_box), visualizer);
 
     /* Oynatma kontrolleri */
     GtkWidget *player_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);

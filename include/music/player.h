@@ -1,6 +1,6 @@
-
 #ifndef MUSIC_PLAYER_H
 #define MUSIC_PLAYER_H
+#define MUSIC_SPECTRUM_BANDS 32
 
 #include <gst/gst.h>
 #include <glib-object.h>
@@ -33,6 +33,8 @@ gint64 music_player_get_duration(MusicPlayer *player);
 
 MusicPlayerState music_player_get_state(MusicPlayer *player);
 const gchar *music_player_get_current_uri(MusicPlayer *player);
+
+const gdouble *music_player_get_spectrum(MusicPlayer *player);
 
 G_END_DECLS
 

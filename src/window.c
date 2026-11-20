@@ -39,6 +39,9 @@ static void music_window_update_current_label(MusicWindowState *state);
 static void music_window_save_playlist(MusicWindowState *state);
 static gboolean music_window_filter_row(GtkListBoxRow *row, gpointer user_data);
 static void music_window_on_search_changed(GtkSearchEntry *entry, gpointer user_data);
+static void music_window_select_current_track(MusicWindowState *state);
+static void music_window_shuffle_reset(MusicWindowState *state);
+static void music_window_play_current(MusicWindowState *state);
 
 static gboolean music_window_filter_row(GtkListBoxRow *row, gpointer user_data) {
     MusicWindowState *state = user_data;

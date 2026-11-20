@@ -981,7 +981,8 @@ static gboolean music_window_on_seek(GtkRange *range, GtkScrollType scroll, gdou
     (void) scroll;
 
     MusicWindowState *state = user_data;
-    music_player_seek(state->player, (gint64) (value * GST_SECOND));
+    gint64 position = (gint64) (value * GST_SECOND);
+    if (music_player_seek(state->player, position)) music_mpris_emit_seeked(state->mpris, position);
 
     music_mpris_update(state->mpris);
 

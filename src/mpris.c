@@ -72,6 +72,8 @@ static const gchar introspection_xml[] =
     " </interface>"
     "</node>";
 
+void music_mpris_emit_seeked(MusicMpris *mpris, gint64 position);
+
 static gchar *music_mpris_get_track_title(MusicMpris *mpris)
 {
     const gchar *uri = music_player_get_current_uri(mpris->player);
@@ -121,8 +123,15 @@ static gboolean music_mpris_seek_to(MusicMpris *mpris, gint64 position)
     gint64 duration = music_player_get_duration(mpris->player);
     if (duration <= 0 || position < 0 || position > duration) return FALSE;
     if (!music_player_seek(mpris->player, position)) return FALSE;
-    if (mpris->connection != NULL) g_dbus_connection_emit_signal(mpris->connection, NULL, MPRIS_OBJECT_PATH, "org.mpris.MediaPlayer2.Player", "Seeked", g_variant_new("(x)", position / 1000), NULL);
+    music_mpris_emit_seeked(mpris, position);
     return TRUE;
+}
+
+void music_mpris_emit_seeked(MusicMpris *mpris, gint64 position)
+{
+    g_return_if_fail(MUSIC_IS_MPRIS(mpris));
+    if (mpris->connection == NULL || position < 0) return;
+    g_dbus_connection_emit_signal(mpris->connection, NULL, MPRIS_OBJECT_PATH, "org.mpris.MediaPlayer2.Player", "Seeked", g_variant_new("(x)", position / 1000), NULL);
 }
 
 static GVariant *music_mpris_get_property(GDBusConnection *connection, const gchar *sender, const gchar *object_path, const gchar *interface_name, const gchar *property_name, GError **error, gpointer user_data)
@@ -159,8 +168,8 @@ static GVariant *music_mpris_get_property(GDBusConnection *connection, const gch
         if (g_str_equal(property_name, "MaximumRate")) return g_variant_new_double(1.0);
         if (g_str_equal(property_name, "CanGoNext")) return g_variant_new_boolean(music_playlist_get_mode(mpris->playlist) != MUSIC_PLAYLIST_MODE_SINGLE && music_playlist_get_count(mpris->playlist) > 1);
         if (g_str_equal(property_name, "CanGoPrevious")) return g_variant_new_boolean(music_playlist_get_mode(mpris->playlist) != MUSIC_PLAYLIST_MODE_SINGLE && music_playlist_get_count(mpris->playlist) > 1);
-        if (g_str_equal(property_name, "CanPlay")) return g_variant_new_boolean(TRUE);
-        if (g_str_equal(property_name, "CanPause")) return g_variant_new_boolean(TRUE);
+        if (g_str_equal(property_name, "CanPlay")) return g_variant_new_boolean(music_player_get_current_uri(mpris->player) != NULL || music_playlist_get_current(mpris->playlist) != NULL);
+        if (g_str_equal(property_name, "CanPause")) return g_variant_new_boolean(music_player_get_current_uri(mpris->player) != NULL);
         if (g_str_equal(property_name, "CanSeek")) return g_variant_new_boolean(music_player_get_duration(mpris->player) > 0);
         if (g_str_equal(property_name, "CanControl")) return g_variant_new_boolean(TRUE);
     }
@@ -448,6 +457,11 @@ void music_mpris_update(MusicMpris *mpris)
     guint repeat_mode = mpris->callbacks.get_repeat != NULL ? mpris->callbacks.get_repeat(mpris->callback_data) : 0;
     g_variant_builder_add(&changed, "{sv}", "Shuffle", g_variant_new_boolean(mpris->callbacks.get_shuffle != NULL && mpris->callbacks.get_shuffle(mpris->callback_data)));
     g_variant_builder_add(&changed, "{sv}", "LoopStatus", g_variant_new_string(repeat_mode == 1 ? "Playlist" : repeat_mode == 2 ? "Track" : "None"));
+    g_variant_builder_add(&changed, "{sv}", "CanGoNext", g_variant_new_boolean(music_playlist_get_mode(mpris->playlist) != MUSIC_PLAYLIST_MODE_SINGLE && music_playlist_get_count(mpris->playlist) > 1));
+    g_variant_builder_add(&changed, "{sv}", "CanGoPrevious", g_variant_new_boolean(music_playlist_get_mode(mpris->playlist) != MUSIC_PLAYLIST_MODE_SINGLE && music_playlist_get_count(mpris->playlist) > 1));
+    g_variant_builder_add(&changed, "{sv}", "CanPlay", g_variant_new_boolean(music_player_get_current_uri(mpris->player) != NULL || music_playlist_get_current(mpris->playlist) != NULL));
+    g_variant_builder_add(&changed, "{sv}", "CanPause", g_variant_new_boolean(music_player_get_current_uri(mpris->player) != NULL));
+    g_variant_builder_add(&changed, "{sv}", "CanSeek", g_variant_new_boolean(music_player_get_duration(mpris->player) > 0));
     
     g_dbus_connection_emit_signal(mpris->connection, NULL, MPRIS_OBJECT_PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged", g_variant_new("(s@a{sv}@as)", "org.mpris.MediaPlayer2.Player", g_variant_builder_end(&changed), g_variant_builder_end(&invalidated)), NULL);
 }

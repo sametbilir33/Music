@@ -42,6 +42,8 @@ static void music_window_on_search_changed(GtkSearchEntry *entry, gpointer user_
 static void music_window_select_current_track(MusicWindowState *state);
 static void music_window_shuffle_reset(MusicWindowState *state);
 static void music_window_play_current(MusicWindowState *state);
+static void music_window_mpris_set_shuffle(gboolean enabled, gpointer user_data);
+static void music_window_mpris_set_repeat(guint mode, gpointer user_data);
 
 static gboolean music_window_filter_row(GtkListBoxRow *row, gpointer user_data) {
     MusicWindowState *state = user_data;

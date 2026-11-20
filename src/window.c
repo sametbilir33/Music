@@ -390,7 +390,6 @@ static void music_window_on_folder_selected(GObject *source, GAsyncResult *resul
         if (error != NULL && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
             music_window_show_error(state, error->message);
         }
-
         return;
     }
 
@@ -401,12 +400,19 @@ static void music_window_on_folder_selected(GObject *source, GAsyncResult *resul
         return;
     }
 
+    music_player_stop(state->player);
+    music_player_clear_current_uri(state->player);
+    gtk_list_box_unselect_all(state->list_box);
+
     g_free(state->config.directory);
-state->config.directory = g_strdup(path);
-g_clear_pointer(&state->config.last_track, g_free);
-music_window_save_playlist(state);
-music_window_refresh_playlist(state);
-music_window_update_current_label(state);
+    state->config.directory = g_strdup(path);
+    g_clear_pointer(&state->config.last_track, g_free);
+
+    music_window_save_playlist(state);
+    music_window_refresh_playlist(state);
+    music_window_update_current_label(state);
+    music_mpris_update(state->mpris);
+    music_config_save(&state->config, NULL);
 }
 
 static void music_window_on_file_selected(GObject *source, GAsyncResult *result, gpointer user_data)
@@ -839,16 +845,24 @@ void music_window_open_files(GtkWindow *window, GFile **files, gint n_files)
 
     if (paths->len == 1 && g_file_test(g_ptr_array_index(paths, 0), G_FILE_TEST_IS_DIR)) {
         const gchar *path = g_ptr_array_index(paths, 0);
+
         if (!music_playlist_load_directory(state->playlist, path, &error)) {
             music_window_show_error(state, error->message);
             return;
         }
+
+        music_player_stop(state->player);
+        music_player_clear_current_uri(state->player);
+        gtk_list_box_unselect_all(state->list_box);
+
         g_free(state->config.directory);
         state->config.directory = g_strdup(path);
         g_clear_pointer(&state->config.last_track, g_free);
+
         music_window_save_playlist(state);
         music_window_refresh_playlist(state);
         music_window_update_current_label(state);
+        music_mpris_update(state->mpris);
         music_config_save(&state->config, NULL);
         return;
     }

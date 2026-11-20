@@ -24,6 +24,8 @@ typedef struct {
     GtkButton *repeat_button;
     gboolean shuffle_enabled;
     guint repeat_mode;
+    GArray *shuffle_order;
+    guint shuffle_position;
 } MusicWindowState;
 
 static gchar *music_window_format_time(gint64 nanoseconds);
@@ -65,6 +67,7 @@ static void music_window_apply_sort(MusicWindowState *state, MusicPlaylistSort s
     state->config.sort = sort;
     music_config_save(&state->config, NULL);
     music_window_refresh_playlist(state);
+    music_window_shuffle_reset(state);
 }
 
 static void music_window_on_sort_action(GSimpleAction *action, GVariant *parameter, gpointer user_data)
@@ -103,6 +106,7 @@ static void music_window_on_remove_selected(GSimpleAction *action, GVariant *par
 
     music_window_save_playlist(state);
     music_window_refresh_playlist(state);
+    music_window_shuffle_reset(state);
 
     if (removed_current_track) {
         if (music_playlist_get_count(state->playlist) > 0) {
@@ -139,6 +143,7 @@ static void music_window_on_clear_playlist(GSimpleAction *action, GVariant *para
     gtk_list_box_unselect_all(state->list_box);
     music_window_update_current_label(state);
     music_mpris_update(state->mpris);
+    music_window_shuffle_reset(state);
 }
 
 static void music_window_on_settings_sort_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
@@ -231,6 +236,66 @@ static void music_window_update_playback_modes(MusicWindowState *state)
     gtk_widget_set_tooltip_text(GTK_WIDGET(state->repeat_button), repeat_tooltip);
 }
 
+static void music_window_shuffle_reset(MusicWindowState *state)
+{
+    guint count = music_playlist_get_count(state->playlist);
+    guint current = music_playlist_get_index(state->playlist);
+
+    if (state->shuffle_order == NULL) state->shuffle_order = g_array_new(FALSE, FALSE, sizeof(guint));
+    g_array_set_size(state->shuffle_order, 0);
+
+    if (count == 0) {
+        state->shuffle_position = 0;
+        return;
+    }
+
+    g_array_append_val(state->shuffle_order, current);
+
+    GArray *remaining = g_array_new(FALSE, FALSE, sizeof(guint));
+
+    for (guint i = 0; i < count; i++) {
+        if (i != current) g_array_append_val(remaining, i);
+    }
+
+    for (guint i = remaining->len; i > 1; i--) {
+        guint j = g_random_int_range(0, i);
+        guint temp = g_array_index(remaining, guint, i - 1);
+        g_array_index(remaining, guint, i - 1) = g_array_index(remaining, guint, j);
+        g_array_index(remaining, guint, j) = temp;
+    }
+
+    g_array_append_vals(state->shuffle_order, remaining->data, remaining->len);
+    g_array_unref(remaining);
+    state->shuffle_position = 0;
+}
+
+static void music_window_shuffle_sync(MusicWindowState *state)
+{
+    guint count = music_playlist_get_count(state->playlist);
+    guint current = music_playlist_get_index(state->playlist);
+
+    if (state->shuffle_order == NULL || state->shuffle_order->len != count || state->shuffle_position >= state->shuffle_order->len || g_array_index(state->shuffle_order, guint, state->shuffle_position) != current) {
+        music_window_shuffle_reset(state);
+    }
+}
+
+static gboolean music_window_shuffle_next(MusicWindowState *state, gboolean repeat_all)
+{
+    music_window_shuffle_sync(state);
+
+    guint count = music_playlist_get_count(state->playlist);
+    if (count == 0) return FALSE;
+    if (state->shuffle_position + 1 < state->shuffle_order->len) state->shuffle_position++;
+    else {
+        if (!repeat_all) return FALSE;
+        if (count == 1) return TRUE;
+        music_window_shuffle_reset(state);
+        state->shuffle_position = 1;
+    }
+
+    return music_playlist_set_index(state->playlist, g_array_index(state->shuffle_order, guint, state->shuffle_position));
+}
+
 static gboolean music_window_select_random_track(MusicWindowState *state)
 {
     if (music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_SINGLE) return FALSE;
@@ -254,6 +319,7 @@ static void music_window_on_shuffle_clicked(GtkButton *button, gpointer user_dat
 
     MusicWindowState *state = user_data;
     state->shuffle_enabled = !state->shuffle_enabled;
+    if (state->shuffle_enabled) music_window_shuffle_reset(state);
     music_window_update_playback_modes(state);
 }
 
@@ -285,6 +351,7 @@ static void music_window_play_current(MusicWindowState *state)
         g_free(state->config.last_track);
         state->config.last_track = g_strdup(uri);
         music_config_save(&state->config, NULL);
+        g_clear_pointer(&state->shuffle_order, g_array_unref);
     }
 
     music_player_play(state->player);
@@ -380,10 +447,18 @@ static void music_window_on_previous(GtkButton *button, gpointer user_data)
     (void) button;
 
     MusicWindowState *state = user_data;
+    MusicPlaylistMode mode = music_playlist_get_mode(state->playlist);
 
-    if ((music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_DIRECTORY || music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_MULTIPLE) && music_playlist_previous(state->playlist)) {
-    music_window_play_current(state);
-}
+    if (mode == MUSIC_PLAYLIST_MODE_SINGLE) return;
+
+    if (state->shuffle_enabled) {
+        music_window_shuffle_sync(state);
+        if (state->shuffle_position == 0) return;
+        state->shuffle_position--;
+        if (music_playlist_set_index(state->playlist, g_array_index(state->shuffle_order, guint, state->shuffle_position))) music_window_play_current(state);
+    } else if (music_playlist_previous(state->playlist)) {
+        music_window_play_current(state);
+    }
 }
 
 static void music_window_on_next(GtkButton *button, gpointer user_data)
@@ -393,17 +468,9 @@ static void music_window_on_next(GtkButton *button, gpointer user_data)
     MusicWindowState *state = user_data;
     if (music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_SINGLE) return;
 
-    gboolean changed = FALSE;
+    gboolean changed = state->shuffle_enabled ? music_window_shuffle_next(state, state->repeat_mode == 1) : music_playlist_next(state->playlist);
 
-    if (state->shuffle_enabled) {
-        changed = music_window_select_random_track(state);
-    } else {
-        changed = music_playlist_next(state->playlist);
-
-        if (!changed && state->repeat_mode == 1 && music_playlist_get_count(state->playlist) > 0) {
-            changed = music_playlist_set_index(state->playlist, 0);
-        }
-    }
+    if (!state->shuffle_enabled && !changed && state->repeat_mode == 1 && music_playlist_get_count(state->playlist) > 0) changed = music_playlist_set_index(state->playlist, 0);
 
     if (changed) music_window_play_current(state);
 }
@@ -427,32 +494,22 @@ static void music_window_on_eos(MusicPlayer *player, gpointer user_data)
     MusicWindowState *state = user_data;
     MusicPlaylistMode mode = music_playlist_get_mode(state->playlist);
 
-    if (mode == MUSIC_PLAYLIST_MODE_SINGLE) {
-        if (state->repeat_mode != 0) music_window_play_current(state);
-        return;
-    }
-
-    guint count = music_playlist_get_count(state->playlist);
-    if (count == 0) return;
-
     if (state->repeat_mode == 2) {
         music_window_play_current(state);
         return;
     }
 
-    gboolean changed = FALSE;
+    if (mode == MUSIC_PLAYLIST_MODE_SINGLE) return;
 
-    if (state->shuffle_enabled) {
-        changed = music_window_select_random_track(state);
-        if (!changed && state->repeat_mode == 1) changed = music_playlist_set_index(state->playlist, 0);
-    } else {
-        changed = music_playlist_next(state->playlist);
-        if (!changed && state->repeat_mode == 1) changed = music_playlist_set_index(state->playlist, 0);
-    }
+    guint count = music_playlist_get_count(state->playlist);
+    if (count == 0) return;
 
-    if (changed) {
-        music_window_play_current(state);
-    } else {
+    gboolean changed = state->shuffle_enabled ? music_window_shuffle_next(state, state->repeat_mode == 1) : music_playlist_next(state->playlist);
+
+    if (!state->shuffle_enabled && !changed && state->repeat_mode == 1) changed = music_playlist_set_index(state->playlist, 0);
+
+    if (changed) music_window_play_current(state);
+    else {
         gtk_button_set_icon_name(state->play_button, "media-playback-start-symbolic");
         gtk_widget_set_tooltip_text(GTK_WIDGET(state->play_button), "Oynat");
     }
@@ -498,6 +555,7 @@ static void music_window_on_folder_selected(GObject *source, GAsyncResult *resul
 
     music_window_save_playlist(state);
     music_window_refresh_playlist(state);
+    music_window_shuffle_reset(state);
     music_window_update_current_label(state);
     music_mpris_update(state->mpris);
     music_config_save(&state->config, NULL);
@@ -536,6 +594,7 @@ static void music_window_on_file_selected(GObject *source, GAsyncResult *result,
     }
 
     music_window_refresh_playlist(state);
+    music_window_shuffle_reset(state);
     music_window_play_current(state);
 }
 
@@ -962,6 +1021,7 @@ void music_window_open_files(GtkWindow *window, GFile **files, gint n_files)
 
         music_window_save_playlist(state);
         music_window_refresh_playlist(state);
+        music_window_shuffle_reset(state);
         music_window_update_current_label(state);
         music_mpris_update(state->mpris);
         music_config_save(&state->config, NULL);
@@ -982,5 +1042,6 @@ void music_window_open_files(GtkWindow *window, GFile **files, gint n_files)
         music_window_refresh_playlist(state);
     }
 
+    music_window_shuffle_reset(state);
     music_window_play_current(state);
 }

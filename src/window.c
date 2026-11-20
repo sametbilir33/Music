@@ -8,6 +8,7 @@
 typedef struct {
     GtkWindow *window;
     GtkListBox *list_box;
+    AdwOverlaySplitView *split_view;
     GtkLabel *current_label;
     GtkButton *play_button;
     MusicPlayer *player;
@@ -435,6 +436,15 @@ static void music_window_state_free(gpointer data)
     g_free(state);
 }
 
+static void music_window_on_toggle_sidebar(GtkButton *button, gpointer user_data)
+{
+    MusicWindowState *state = user_data;
+    gboolean show = !adw_overlay_split_view_get_show_sidebar(state->split_view);
+
+    adw_overlay_split_view_set_show_sidebar(state->split_view, show);
+    gtk_button_set_icon_name(button, show ? "sidebar-show-symbolic" : "sidebar-show-right-symbolic");
+    gtk_widget_set_tooltip_text(GTK_WIDGET(button), show ? "Çalma Listesini Gizle" : "Çalma Listesini Göster");
+}
 
 GtkWindow *music_window_new(GtkApplication *app)
 {
@@ -479,6 +489,11 @@ GtkWindow *music_window_new(GtkApplication *app)
 
     GtkWidget *open_folder_button = gtk_button_new_from_icon_name("view-list-symbolic");
     GtkWidget *open_file_button = gtk_button_new_from_icon_name("audio-x-generic-symbolic");
+
+    GtkWidget *sidebar_toggle_button = gtk_button_new_from_icon_name("sidebar-show-symbolic");
+    gtk_widget_set_tooltip_text(sidebar_toggle_button, "Çalma Listesini Gizle");
+    adw_header_bar_pack_start(header_bar, sidebar_toggle_button);
+    g_signal_connect(sidebar_toggle_button, "clicked", G_CALLBACK(music_window_on_toggle_sidebar), state);
 
     gtk_widget_set_tooltip_text(open_folder_button, "Çalma Listesi Aç");
     gtk_widget_set_tooltip_text(open_file_button, "Tekli Dosya Aç");
@@ -592,16 +607,15 @@ GtkWindow *music_window_new(GtkApplication *app)
     g_signal_connect(state->play_button, "clicked", G_CALLBACK(music_window_on_play_pause), state);
     g_signal_connect(next_button, "clicked", G_CALLBACK(music_window_on_next), state);
 
-    /* Sol ve sağ alanı birleştir */
-    AdwOverlaySplitView *split_view = ADW_OVERLAY_SPLIT_VIEW(adw_overlay_split_view_new());
-    adw_overlay_split_view_set_sidebar(split_view, sidebar_box);
-    adw_overlay_split_view_set_content(split_view, main_box);
-    adw_overlay_split_view_set_sidebar_width_fraction(split_view, 0.28);
-    adw_overlay_split_view_set_min_sidebar_width(split_view, 220);
-    adw_overlay_split_view_set_max_sidebar_width(split_view, 340);
-    adw_overlay_split_view_set_show_sidebar(split_view, TRUE);
+    state->split_view = ADW_OVERLAY_SPLIT_VIEW(adw_overlay_split_view_new());
+    adw_overlay_split_view_set_sidebar(state->split_view, sidebar_box);
+    adw_overlay_split_view_set_content(state->split_view, main_box);
+    adw_overlay_split_view_set_sidebar_width_fraction(state->split_view, 0.28);
+    adw_overlay_split_view_set_min_sidebar_width(state->split_view, 220);
+    adw_overlay_split_view_set_max_sidebar_width(state->split_view, 340);
+    adw_overlay_split_view_set_show_sidebar(state->split_view, TRUE);
 
-    adw_toolbar_view_set_content(toolbar_view, GTK_WIDGET(split_view));
+    adw_toolbar_view_set_content(toolbar_view, GTK_WIDGET(state->split_view));
     adw_application_window_set_content(window, GTK_WIDGET(toolbar_view));
 
     /* Kaydedilmiş müzik dizinini ve çalma listesini yükle */

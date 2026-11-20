@@ -126,10 +126,15 @@ static void music_window_on_clear_playlist(GSimpleAction *action, GVariant *para
     if (music_playlist_get_mode(state->playlist) != MUSIC_PLAYLIST_MODE_DIRECTORY) return;
 
     music_playlist_clear(state->playlist);
+    music_player_stop(state->player);
+    music_player_clear_current_uri(state->player);
+
     g_clear_pointer(&state->config.last_track, g_free);
     music_window_save_playlist(state);
     music_window_refresh_playlist(state);
+    gtk_list_box_unselect_all(state->list_box);
     music_window_update_current_label(state);
+    music_mpris_update(state->mpris);
 }
 
 static void music_window_on_settings_sort_changed(GObject *object, GParamSpec *pspec, gpointer user_data)

@@ -8,6 +8,7 @@
 typedef struct {
     GtkWindow *window;
     GtkListBox *list_box;
+    GtkSearchEntry *search_entry;
     AdwOverlaySplitView *split_view;
     GtkLabel *current_label;
     GtkButton *play_button;
@@ -30,6 +31,28 @@ static GtkWidget *music_window_create_playlist_menu(void);
 static void music_window_refresh_playlist(MusicWindowState *state);
 static void music_window_update_current_label(MusicWindowState *state);
 static void music_window_save_playlist(MusicWindowState *state);
+static gboolean music_window_filter_row(GtkListBoxRow *row, gpointer user_data);
+static void music_window_on_search_changed(GtkSearchEntry *entry, gpointer user_data);
+
+static gboolean music_window_filter_row(GtkListBoxRow *row, gpointer user_data) {
+    MusicWindowState *state = user_data;
+    const gchar *query = gtk_editable_get_text(GTK_EDITABLE(state->search_entry));
+    if (query == NULL || *query == '\0') return TRUE;
+    guint index = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(row), "track-index")) - 1;
+    const gchar *uri = music_playlist_get_track(state->playlist, index);
+    if (uri == NULL) return FALSE;
+    g_autofree gchar *path = g_filename_from_uri(uri, NULL, NULL);
+    g_autofree gchar *basename = path != NULL ? g_path_get_basename(path) : g_strdup(uri);
+    g_autofree gchar *folded_name = g_utf8_casefold(basename, -1);
+    g_autofree gchar *folded_query = g_utf8_casefold(query, -1);
+    return g_strstr_len(folded_name, -1, folded_query) != NULL;
+}
+
+static void music_window_on_search_changed(GtkSearchEntry *entry, gpointer user_data) {
+    (void) entry;
+    MusicWindowState *state = user_data;
+    gtk_list_box_invalidate_filter(state->list_box);
+}
 
 static void music_window_apply_sort(MusicWindowState *state, MusicPlaylistSort sort)
 {
@@ -155,13 +178,15 @@ static void music_window_update_current_label(MusicWindowState *state)
     gtk_label_set_text(state->current_label, basename);
 }
 
-static void music_window_select_current_track(MusicWindowState *state)
-{
-    MusicPlaylistMode mode = music_playlist_get_mode(state->playlist);
-    if (mode == MUSIC_PLAYLIST_MODE_SINGLE) return;
+static void music_window_select_current_track(MusicWindowState *state) {
+    if (music_playlist_get_mode(state->playlist) == MUSIC_PLAYLIST_MODE_SINGLE) return;
     guint index = music_playlist_get_index(state->playlist);
-    GtkListBoxRow *row = gtk_list_box_get_row_at_index(state->list_box, index);
-    if (row != NULL) gtk_list_box_select_row(state->list_box, row);
+    for (GtkWidget *child = gtk_widget_get_first_child(GTK_WIDGET(state->list_box)); child != NULL; child = gtk_widget_get_next_sibling(child)) {
+        if (GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(child), "track-index")) == index + 1) {
+            gtk_list_box_select_row(state->list_box, GTK_LIST_BOX_ROW(child));
+            break;
+        }
+    }
 }
 
 static void music_window_play_current(MusicWindowState *state)
@@ -531,7 +556,18 @@ GtkWindow *music_window_new(GtkApplication *app)
     gtk_box_append(GTK_BOX(sidebar_header), music_window_create_playlist_menu());
     gtk_box_append(GTK_BOX(sidebar_box), sidebar_header);
 
+    state->search_entry = GTK_SEARCH_ENTRY(gtk_search_entry_new());
+    gtk_search_entry_set_placeholder_text(state->search_entry, "Parçalarda ara...");
+    gtk_widget_set_margin_start(GTK_WIDGET(state->search_entry), 12);
+    gtk_widget_set_margin_end(GTK_WIDGET(state->search_entry), 12);
+    gtk_widget_set_margin_top(GTK_WIDGET(state->search_entry), 6);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(state->search_entry), 8);
+    gtk_box_append(GTK_BOX(sidebar_box), GTK_WIDGET(state->search_entry));
+
     state->list_box = GTK_LIST_BOX(gtk_list_box_new());
+
+    gtk_list_box_set_filter_func(state->list_box, music_window_filter_row, state, NULL);
+    g_signal_connect(state->search_entry, "search-changed", G_CALLBACK(music_window_on_search_changed), state);
     gtk_list_box_set_selection_mode(state->list_box, GTK_SELECTION_SINGLE);
     gtk_list_box_set_placeholder(state->list_box, gtk_label_new("Henüz müzik eklenmedi."));
 

@@ -9,7 +9,7 @@ typedef struct {
     gchar *last_track;
     gdouble volume;
     gboolean shuffle;
-    gboolean repeat;
+    gboolean repeat_mode;
     MusicPlaylistSort sort;
     gchar **custom_order;
     gsize custom_order_length;

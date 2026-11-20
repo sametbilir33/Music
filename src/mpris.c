@@ -119,8 +119,7 @@ static const gchar *music_mpris_get_playback_status(MusicMpris *mpris)
 static gboolean music_mpris_seek_to(MusicMpris *mpris, gint64 position)
 {
     gint64 duration = music_player_get_duration(mpris->player);
-    if (duration < 0) return FALSE;
-    position = CLAMP(position, 0, duration);
+    if (duration <= 0 || position < 0 || position > duration) return FALSE;
     if (!music_player_seek(mpris->player, position)) return FALSE;
     if (mpris->connection != NULL) g_dbus_connection_emit_signal(mpris->connection, NULL, MPRIS_OBJECT_PATH, "org.mpris.MediaPlayer2.Player", "Seeked", g_variant_new("(x)", position / 1000), NULL);
     return TRUE;
@@ -258,43 +257,46 @@ static void music_mpris_method_call(GDBusConnection *connection, const gchar *se
         else if (g_str_equal(method_name, "Seek")) {
             gint64 offset;
             g_variant_get(parameters, "(x)", &offset);
+
             gint64 current = music_player_get_position(mpris->player);
-        if (current >= 0 && offset <= G_MAXINT64 / 1000 && offset >= G_MININT64 / 1000) {
+            gint64 duration = music_player_get_duration(mpris->player);
+
+            if (current >= 0 && duration > 0 && current <= duration && offset <= G_MAXINT64 / 1000 && offset >= G_MININT64 / 1000) {
                 gint64 delta = offset * 1000;
-        if (!((delta > 0 && current > G_MAXINT64 - delta) || (delta < 0 && current < G_MININT64 - delta))) music_mpris_seek_to(mpris, current + delta);
+
+                if (delta > 0 && delta > duration - current) music_mpris_next(mpris);
+                else if (delta < 0 && delta < -current) music_mpris_seek_to(mpris, 0);
+                else music_mpris_seek_to(mpris, current + delta);
             }
         }
         else if (g_str_equal(method_name, "SetPosition")) {
             const gchar *track_id;
             gint64 position;
             g_variant_get(parameters, "(&ox)", &track_id, &position);
+
             g_autofree gchar *expected = NULL;
             const gchar *uri = music_player_get_current_uri(mpris->player);
             if (uri == NULL) uri = music_playlist_get_current(mpris->playlist);
+
             if (uri != NULL) expected = g_strdup_printf("/org/mpris/MediaPlayer2/Track/%u", g_str_hash(uri));
-            if (expected != NULL && g_str_equal(track_id, expected)) music_mpris_seek_to(mpris, position * 1000);
+
+            if (expected != NULL && g_str_equal(track_id, expected) && position >= 0 && position <= G_MAXINT64 / 1000) {
+                music_mpris_seek_to(mpris, position * 1000);
+            }
         }
         else if (g_str_equal(method_name, "OpenUri")) {
             const gchar *uri;
             g_variant_get(parameters, "(&s)", &uri);
+
             g_autofree gchar *path = g_filename_from_uri(uri, NULL, NULL);
-            if (path != NULL && music_playlist_open_single(mpris->playlist, path, NULL) && music_player_open(mpris->player, uri, NULL)) music_player_play(mpris->player);
+
+            if (path != NULL && music_playlist_open_single(mpris->playlist, path, NULL) && music_player_open(mpris->player, uri, NULL)) {
+                music_player_play(mpris->player);
+            }
         }
-        else if (g_str_equal(method_name, "SetPosition")) {
-            const gchar *track_id;
-            gint64 position;
-            g_variant_get(parameters, "(&ox)", &track_id, &position);
-            g_autofree gchar *expected = NULL;
-            const gchar *uri = music_player_get_current_uri(mpris->player);
-            if (uri == NULL) uri = music_playlist_get_current(mpris->playlist);
-            if (uri != NULL) expected = g_strdup_printf("/org/mpris/MediaPlayer2/Track/%u", g_str_hash(uri));
-            if (expected != NULL && g_str_equal(track_id, expected) && position >= 0 && position <= G_MAXINT64 / 1000) music_mpris_seek_to(mpris, position * 1000);
-        }
-        else if (g_str_equal(method_name, "OpenUri")) {
-            const gchar *uri;
-            g_variant_get(parameters, "(&s)", &uri);
-            g_autofree gchar *path = g_filename_from_uri(uri, NULL, NULL);
-            if (path != NULL && music_playlist_open_single(mpris->playlist, path, NULL) && music_player_open(mpris->player, uri, NULL)) music_player_play(mpris->player);
+        else {
+            g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown MPRIS method");
+            return;
         }
 
         music_mpris_update(mpris);

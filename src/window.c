@@ -513,7 +513,7 @@ static void music_window_mpris_set_repeat(guint mode, gpointer user_data)
     MusicWindowState *state = user_data;
     if (mode > 2) return;
     state->repeat_mode = mode;
-    state->config.repeat = mode != 0;
+    state->config.repeat_mode = mode;
     music_config_save(&state->config, NULL);
     music_window_update_playback_modes(state);
 }
@@ -718,7 +718,7 @@ GtkWindow *music_window_new(GtkApplication *app)
     music_config_load(&state->config);
 
     state->shuffle_enabled = state->config.shuffle;
-    state->repeat_mode = state->config.repeat ? 1 : 0;
+    state->repeat_mode = CLAMP(state->config.repeat_mode, 0, 2);
 
     AdwApplicationWindow *window = ADW_APPLICATION_WINDOW(adw_application_window_new(app));
     state->window = GTK_WINDOW(window);

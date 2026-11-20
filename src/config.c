@@ -16,7 +16,7 @@ void music_config_init(MusicConfig *config)
     config->last_track = NULL;
     config->volume = 0.75;
     config->shuffle = FALSE;
-    config->repeat = FALSE;
+    config->repeat_mode = 0;
     config->sort = MUSIC_PLAYLIST_SORT_NAME_ASC;
     config->custom_order = NULL;
     config->custom_order_length = 0;
@@ -44,7 +44,8 @@ void music_config_load(MusicConfig *config)
 
     if (g_key_file_has_key(key_file, "Player", "volume", NULL)) config->volume = g_key_file_get_double(key_file, "Player", "volume", NULL);
     if (g_key_file_has_key(key_file, "Player", "shuffle", NULL)) config->shuffle = g_key_file_get_boolean(key_file, "Player", "shuffle", NULL);
-    if (g_key_file_has_key(key_file, "Player", "repeat", NULL)) config->repeat = g_key_file_get_boolean(key_file, "Player", "repeat", NULL);
+    if (g_key_file_has_key(key_file, "Player", "repeat-mode", NULL)) config->repeat_mode = CLAMP(g_key_file_get_integer(key_file, "Player", "repeat-mode", NULL), 0, 2);
+    else if (g_key_file_has_key(key_file, "Player", "repeat", NULL)) config->repeat_mode = g_key_file_get_boolean(key_file, "Player", "repeat", NULL) ? 1 : 0;
     if (g_key_file_has_key(key_file, "Playlist", "sort", NULL)) config->sort = CLAMP(g_key_file_get_integer(key_file, "Playlist", "sort", NULL), MUSIC_PLAYLIST_SORT_CUSTOM, MUSIC_PLAYLIST_SORT_DATE_OLDEST);
     if (g_key_file_has_key(key_file, "Playlist", "saved", NULL)) config->playlist_saved = g_key_file_get_boolean(key_file, "Playlist", "saved", NULL);
 
@@ -74,7 +75,7 @@ gboolean music_config_save(const MusicConfig *config, GError **error)
 
     g_key_file_set_double(key_file, "Player", "volume", CLAMP(config->volume, 0.0, 1.0));
     g_key_file_set_boolean(key_file, "Player", "shuffle", config->shuffle);
-    g_key_file_set_boolean(key_file, "Player", "repeat", config->repeat);
+    g_key_file_set_integer(key_file, "Player", "repeat-mode", CLAMP(config->repeat_mode, 0, 2));
     g_key_file_set_integer(key_file, "Playlist", "sort", config->sort);
     g_key_file_set_boolean(key_file, "Playlist", "saved", config->playlist_saved);
     
@@ -92,6 +93,6 @@ void music_config_clear(MusicConfig *config)
     config->custom_order_length = 0;
     config->volume = 0.75;
     config->shuffle = FALSE;
-    config->repeat = FALSE;
+    config->repeat_mode = 0;
     config->sort = MUSIC_PLAYLIST_SORT_NAME_ASC;
 }

@@ -15,6 +15,8 @@ struct _MusicMpris {
     GDBusNodeInfo *introspection;
     guint registration_id;
     gboolean name_owned;
+    MusicMprisCallbacks callbacks;
+    gpointer callback_data;
 };
 
 G_DEFINE_TYPE(MusicMpris, music_mpris, G_TYPE_OBJECT)
@@ -135,9 +137,12 @@ static GVariant *music_mpris_get_property(GDBusConnection *connection, const gch
 
     if (g_str_equal(interface_name, "org.mpris.MediaPlayer2.Player")) {
         if (g_str_equal(property_name, "PlaybackStatus")) return g_variant_new_string(music_mpris_get_playback_status(mpris));
-        if (g_str_equal(property_name, "LoopStatus")) return g_variant_new_string("None");
+        if (g_str_equal(property_name, "LoopStatus")) {
+            guint mode = mpris->callbacks.get_repeat != NULL ? mpris->callbacks.get_repeat(mpris->callback_data) : 0;
+            return g_variant_new_string(mode == 1 ? "Playlist" : mode == 2 ? "Track" : "None");
+        }
         if (g_str_equal(property_name, "Rate")) return g_variant_new_double(1.0);
-        if (g_str_equal(property_name, "Shuffle")) return g_variant_new_boolean(FALSE);
+        if (g_str_equal(property_name, "Shuffle")) return g_variant_new_boolean(mpris->callbacks.get_shuffle != NULL && mpris->callbacks.get_shuffle(mpris->callback_data));
         if (g_str_equal(property_name, "Metadata")) return music_mpris_get_metadata(mpris);
         if (g_str_equal(property_name, "Volume")) return g_variant_new_double(music_player_get_volume(mpris->player));
         if (g_str_equal(property_name, "Position")) return g_variant_new_int64(music_player_get_position(mpris->player) / 1000);
@@ -171,26 +176,44 @@ static gboolean music_mpris_set_property(GDBusConnection *connection, const gcha
         return TRUE;
     }
 
-    if (g_str_equal(property_name, "Shuffle") || g_str_equal(property_name, "LoopStatus") || g_str_equal(property_name, "Rate")) return TRUE;
+    if (g_str_equal(property_name, "Shuffle")) {
+    if (mpris->callbacks.set_shuffle == NULL) return FALSE;
+    mpris->callbacks.set_shuffle(g_variant_get_boolean(value), mpris->callback_data);
+    music_mpris_update(mpris);
+    return TRUE;
+    }
+    if (g_str_equal(property_name, "LoopStatus")) {
+    if (mpris->callbacks.set_repeat == NULL) return FALSE;
+    const gchar *mode = g_variant_get_string(value, NULL);
+    if (g_str_equal(mode, "None")) mpris->callbacks.set_repeat(0, mpris->callback_data);
+    else if (g_str_equal(mode, "Playlist")) mpris->callbacks.set_repeat(1, mpris->callback_data);
+    else if (g_str_equal(mode, "Track")) mpris->callbacks.set_repeat(2, mpris->callback_data);
+    else return FALSE;
+    music_mpris_update(mpris);
+    return TRUE;
+    }
+    if (g_str_equal(property_name, "Rate")) return FALSE;   
 
     return FALSE;
 }
 
 static void music_mpris_next(MusicMpris *mpris)
 {
-    if (!music_playlist_next(mpris->playlist)) return;
-    const gchar *uri = music_playlist_get_current(mpris->playlist);
-    if (uri == NULL) return;
-    if (music_player_open(mpris->player, uri, NULL)) music_player_play(mpris->player);
+    if (mpris->callbacks.next != NULL) mpris->callbacks.next(mpris->callback_data);
+    else if (music_playlist_next(mpris->playlist)) {
+        const gchar *uri = music_playlist_get_current(mpris->playlist);
+        if (uri != NULL && music_player_open(mpris->player, uri, NULL)) music_player_play(mpris->player);
+    }
     music_mpris_update(mpris);
 }
 
 static void music_mpris_previous(MusicMpris *mpris)
 {
-    if (!music_playlist_previous(mpris->playlist)) return;
-    const gchar *uri = music_playlist_get_current(mpris->playlist);
-    if (uri == NULL) return;
-    if (music_player_open(mpris->player, uri, NULL)) music_player_play(mpris->player);
+    if (mpris->callbacks.previous != NULL) mpris->callbacks.previous(mpris->callback_data);
+    else if (music_playlist_previous(mpris->playlist)) {
+        const gchar *uri = music_playlist_get_current(mpris->playlist);
+        if (uri != NULL && music_player_open(mpris->player, uri, NULL)) music_player_play(mpris->player);
+    }
     music_mpris_update(mpris);
 }
 
@@ -296,6 +319,15 @@ MusicMpris *music_mpris_new(MusicPlayer *player, MusicPlaylist *playlist)
     return mpris;
 }
 
+void music_mpris_set_callbacks(MusicMpris *mpris, const MusicMprisCallbacks *callbacks, gpointer user_data)
+{
+    g_return_if_fail(MUSIC_IS_MPRIS(mpris));
+    memset(&mpris->callbacks, 0, sizeof(mpris->callbacks));
+    if (callbacks != NULL) mpris->callbacks = *callbacks;
+    mpris->callback_data = user_data;
+    music_mpris_update(mpris);
+}
+
 gboolean music_mpris_start(MusicMpris *mpris, GError **error)
 {
     g_return_val_if_fail(MUSIC_IS_MPRIS(mpris), FALSE);
@@ -380,6 +412,9 @@ void music_mpris_update(MusicMpris *mpris)
     g_variant_builder_add(&changed, "{sv}", "PlaybackStatus", g_variant_new_string(music_mpris_get_playback_status(mpris)));
     g_variant_builder_add(&changed, "{sv}", "Metadata", music_mpris_get_metadata(mpris));
     g_variant_builder_add(&changed, "{sv}", "Volume", g_variant_new_double(music_player_get_volume(mpris->player)));
-
+    guint repeat_mode = mpris->callbacks.get_repeat != NULL ? mpris->callbacks.get_repeat(mpris->callback_data) : 0;
+    g_variant_builder_add(&changed, "{sv}", "Shuffle", g_variant_new_boolean(mpris->callbacks.get_shuffle != NULL && mpris->callbacks.get_shuffle(mpris->callback_data)));
+    g_variant_builder_add(&changed, "{sv}", "LoopStatus", g_variant_new_string(repeat_mode == 1 ? "Playlist" : repeat_mode == 2 ? "Track" : "None"));
+    
     g_dbus_connection_emit_signal(mpris->connection, NULL, MPRIS_OBJECT_PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged", g_variant_new("(s@a{sv}@as)", "org.mpris.MediaPlayer2.Player", g_variant_builder_end(&changed), g_variant_builder_end(&invalidated)), NULL);
 }

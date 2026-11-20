@@ -17,7 +17,7 @@ static void music_application_show_about(GSimpleAction *action, GVariant *parame
     g_autofree gchar *icon_path = g_build_filename(g_get_current_dir(), "data", "icons", NULL);
     gtk_icon_theme_add_search_path(gtk_icon_theme_get_for_display(gdk_display_get_default()), icon_path);
     adw_about_dialog_set_application_icon(dialog, "io.github.sametbilir33.Music");
-    adw_about_dialog_set_version(dialog, "0.1.0");
+    adw_about_dialog_set_version(dialog, "0.6.7");
     adw_about_dialog_set_developer_name(dialog, "Samet Bilir");
     adw_about_dialog_set_comments(dialog, "A native Linux music player built with GTK4, Libadwaita, and GStreamer.");
 

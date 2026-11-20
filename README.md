@@ -15,7 +15,7 @@
 - Browse and play music from a selected directory
 - Open and play individual music files independently of the directory playlist
 - Remember the last selected music directory
-- Play, pause, and stop controls
+- Play, pause, stop, shuffle and randomize controls
 - Previous and next track navigation
 - Playlist management
   - Remove individual tracks from the playlist

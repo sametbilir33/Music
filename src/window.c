@@ -320,21 +320,16 @@ static void music_window_on_shuffle_clicked(GtkButton *button, gpointer user_dat
 {
     (void) button;
     MusicWindowState *state = user_data;
-    state->shuffle_enabled = !state->shuffle_enabled;
-    state->config.shuffle = state->shuffle_enabled;
-    if (state->shuffle_enabled) music_window_shuffle_reset(state);
-    music_config_save(&state->config, NULL);
-    music_window_update_playback_modes(state);
+    music_window_mpris_set_shuffle(!state->shuffle_enabled, state);
+    music_mpris_update(state->mpris);
 }
 
 static void music_window_on_repeat_clicked(GtkButton *button, gpointer user_data)
 {
     (void) button;
     MusicWindowState *state = user_data;
-    state->repeat_mode = (state->repeat_mode + 1) % 3;
-    state->config.repeat = state->repeat_mode != 0;
-    music_config_save(&state->config, NULL);
-    music_window_update_playback_modes(state);
+    music_window_mpris_set_repeat((state->repeat_mode + 1) % 3, state);
+    music_mpris_update(state->mpris);
 }
 
 static void music_window_play_current(MusicWindowState *state)
@@ -477,6 +472,48 @@ static void music_window_on_next(GtkButton *button, gpointer user_data)
     if (!state->shuffle_enabled && !changed && state->repeat_mode == 1 && music_playlist_get_count(state->playlist) > 0) changed = music_playlist_set_index(state->playlist, 0);
 
     if (changed) music_window_play_current(state);
+}
+
+static void music_window_mpris_next(gpointer user_data)
+{
+    music_window_on_next(NULL, user_data);
+}
+
+static void music_window_mpris_previous(gpointer user_data)
+{
+    music_window_on_previous(NULL, user_data);
+}
+
+static gboolean music_window_mpris_get_shuffle(gpointer user_data)
+{
+    MusicWindowState *state = user_data;
+    return state->shuffle_enabled;
+}
+
+static void music_window_mpris_set_shuffle(gboolean enabled, gpointer user_data)
+{
+    MusicWindowState *state = user_data;
+    state->shuffle_enabled = enabled;
+    state->config.shuffle = enabled;
+    if (enabled) music_window_shuffle_reset(state);
+    music_config_save(&state->config, NULL);
+    music_window_update_playback_modes(state);
+}
+
+static guint music_window_mpris_get_repeat(gpointer user_data)
+{
+    MusicWindowState *state = user_data;
+    return state->repeat_mode;
+}
+
+static void music_window_mpris_set_repeat(guint mode, gpointer user_data)
+{
+    MusicWindowState *state = user_data;
+    if (mode > 2) return;
+    state->repeat_mode = mode;
+    state->config.repeat = mode != 0;
+    music_config_save(&state->config, NULL);
+    music_window_update_playback_modes(state);
 }
 
 static void music_window_on_player_state_changed(MusicPlayer *player, gint player_state, gpointer user_data)
@@ -664,6 +701,17 @@ GtkWindow *music_window_new(GtkApplication *app)
     state->playlist = music_playlist_new();
     state->mpris = music_mpris_new(state->player, state->playlist);
 
+    const MusicMprisCallbacks mpris_callbacks = {
+    .next = music_window_mpris_next,
+    .previous = music_window_mpris_previous,
+    .get_shuffle = music_window_mpris_get_shuffle,
+    .set_shuffle = music_window_mpris_set_shuffle,
+    .get_repeat = music_window_mpris_get_repeat,
+    .set_repeat = music_window_mpris_set_repeat
+    };
+
+    music_mpris_set_callbacks(state->mpris, &mpris_callbacks, state);
+    
     music_config_init(&state->config);
     music_config_load(&state->config);
 

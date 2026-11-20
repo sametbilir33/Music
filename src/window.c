@@ -614,7 +614,7 @@ static void music_window_on_open_folder(GtkButton *button, gpointer user_data)
     GtkFileDialog *dialog = gtk_file_dialog_new();
 
     gtk_file_dialog_set_title(dialog, "Müzik dizini seç");
-    gtk_file_dialog_select_folder(dialog, state->window, NULL, music_window_on_folder_selected, state);
+    gtk_file_dialog_select_folder(dialog, state->window, NULL, music_window_on_folder_selected, g_object_ref(state->window));
 
     g_object_unref(dialog);
 }
@@ -627,7 +627,7 @@ static void music_window_on_open_file(GtkButton *button, gpointer user_data)
     GtkFileDialog *dialog = gtk_file_dialog_new();
 
     gtk_file_dialog_set_title(dialog, "Müzik dosyası aç");
-    gtk_file_dialog_open_multiple(dialog, state->window, NULL, music_window_on_file_selected, state);
+    gtk_file_dialog_open_multiple(dialog, state->window, NULL, music_window_on_file_selected, g_object_ref(state->window));
 
     g_object_unref(dialog);
 }

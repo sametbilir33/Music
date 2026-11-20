@@ -88,13 +88,32 @@ static void music_window_on_remove_selected(GSimpleAction *action, GVariant *par
 
     guint index = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(row), "track-index")) - 1;
     const gchar *removed_track = music_playlist_get_track(state->playlist, index);
+    const gchar *playing_track = music_player_get_current_uri(state->player);
+
+    gboolean removed_current_track = index == music_playlist_get_index(state->playlist) && g_strcmp0(removed_track, playing_track) == 0;
     gboolean removed_last_track = g_strcmp0(removed_track, state->config.last_track) == 0;
 
-    if (music_playlist_remove(state->playlist, index)) {
-        if (removed_last_track) g_clear_pointer(&state->config.last_track, g_free);
-        music_window_save_playlist(state);
-        music_window_refresh_playlist(state);
+    if (!music_playlist_remove(state->playlist, index)) return;
+
+    if (removed_last_track) g_clear_pointer(&state->config.last_track, g_free);
+
+    music_window_save_playlist(state);
+    music_window_refresh_playlist(state);
+
+    if (removed_current_track) {
+        if (music_playlist_get_count(state->playlist) > 0) {
+            music_window_play_current(state);
+        } else {
+            music_player_stop(state->player);
+            music_player_clear_current_uri(state->player);
+            gtk_list_box_unselect_all(state->list_box);
+            gtk_label_set_text(state->current_label, "Şu anda çalan parça yok");
+            music_mpris_update(state->mpris);
+        }
+    } else {
+        music_window_select_current_track(state);
         music_window_update_current_label(state);
+        music_mpris_update(state->mpris);
     }
 }
 

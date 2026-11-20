@@ -30,6 +30,7 @@ gdouble music_player_get_volume(MusicPlayer *player);
 gboolean music_player_seek(MusicPlayer *player, gint64 position);
 gint64 music_player_get_position(MusicPlayer *player);
 gint64 music_player_get_duration(MusicPlayer *player);
+void music_player_clear_current_uri(MusicPlayer *player);
 
 MusicPlayerState music_player_get_state(MusicPlayer *player);
 const gchar *music_player_get_current_uri(MusicPlayer *player);

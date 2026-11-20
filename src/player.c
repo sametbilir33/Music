@@ -315,3 +315,9 @@ const gdouble *music_player_get_spectrum(MusicPlayer *player)
     g_return_val_if_fail(MUSIC_IS_PLAYER(player), NULL);
     return player->spectrum;
 }
+
+void music_player_clear_current_uri(MusicPlayer *player)
+{
+    g_return_if_fail(MUSIC_IS_PLAYER(player));
+    g_clear_pointer(&player->current_uri, g_free);
+}

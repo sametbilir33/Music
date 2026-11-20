@@ -300,7 +300,7 @@ guint music_playlist_get_count(MusicPlaylist *playlist)
 guint music_playlist_get_index(MusicPlaylist *playlist)
 {
     g_return_val_if_fail(playlist != NULL, 0);
-    return playlist->current_index;
+    return playlist->mode == MUSIC_PLAYLIST_MODE_MULTIPLE ? playlist->multiple_index : playlist->current_index;
 }
 
 MusicPlaylistMode music_playlist_get_mode(MusicPlaylist *playlist)

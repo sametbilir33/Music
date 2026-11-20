@@ -154,6 +154,15 @@ static void music_window_update_current_label(MusicWindowState *state)
     gtk_label_set_text(state->current_label, basename);
 }
 
+static void music_window_select_current_track(MusicWindowState *state)
+{
+    MusicPlaylistMode mode = music_playlist_get_mode(state->playlist);
+    if (mode == MUSIC_PLAYLIST_MODE_SINGLE) return;
+    guint index = music_playlist_get_index(state->playlist);
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(state->list_box, index);
+    if (row != NULL) gtk_list_box_select_row(state->list_box, row);
+}
+
 static void music_window_play_current(MusicWindowState *state)
 {
     const gchar *uri = music_playlist_get_current(state->playlist);
@@ -176,6 +185,7 @@ static void music_window_play_current(MusicWindowState *state)
     }
 
     music_player_play(state->player);
+    music_window_select_current_track(state);
     music_window_update_current_label(state);
     music_mpris_update(state->mpris);
 }

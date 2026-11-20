@@ -319,19 +319,21 @@ static gboolean music_window_select_random_track(MusicWindowState *state)
 static void music_window_on_shuffle_clicked(GtkButton *button, gpointer user_data)
 {
     (void) button;
-
     MusicWindowState *state = user_data;
     state->shuffle_enabled = !state->shuffle_enabled;
+    state->config.shuffle = state->shuffle_enabled;
     if (state->shuffle_enabled) music_window_shuffle_reset(state);
+    music_config_save(&state->config, NULL);
     music_window_update_playback_modes(state);
 }
 
 static void music_window_on_repeat_clicked(GtkButton *button, gpointer user_data)
 {
     (void) button;
-
     MusicWindowState *state = user_data;
     state->repeat_mode = (state->repeat_mode + 1) % 3;
+    state->config.repeat = state->repeat_mode != 0;
+    music_config_save(&state->config, NULL);
     music_window_update_playback_modes(state);
 }
 
@@ -354,7 +356,6 @@ static void music_window_play_current(MusicWindowState *state)
         g_free(state->config.last_track);
         state->config.last_track = g_strdup(uri);
         music_config_save(&state->config, NULL);
-        g_clear_pointer(&state->shuffle_order, g_array_unref);
     }
 
     music_player_play(state->player);
@@ -530,7 +531,9 @@ static void music_window_on_player_error(MusicPlayer *player, const gchar *messa
 
 static void music_window_on_folder_selected(GObject *source, GAsyncResult *result, gpointer user_data)
 {
-    MusicWindowState *state = user_data;
+    g_autoptr(GtkWindow) callback_window = GTK_WINDOW(user_data);
+    MusicWindowState *state = g_object_get_data(G_OBJECT(callback_window), "music-state");
+    if (state == NULL || !gtk_widget_get_visible(GTK_WIDGET(callback_window))) return;
     g_autoptr(GError) error = NULL;
     g_autoptr(GFile) folder = gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(source), result, &error);
 
@@ -566,7 +569,9 @@ static void music_window_on_folder_selected(GObject *source, GAsyncResult *resul
 
 static void music_window_on_file_selected(GObject *source, GAsyncResult *result, gpointer user_data)
 {
-    MusicWindowState *state = user_data;
+    g_autoptr(GtkWindow) callback_window = GTK_WINDOW(user_data);
+    MusicWindowState *state = g_object_get_data(G_OBJECT(callback_window), "music-state");
+    if (state == NULL || !gtk_widget_get_visible(GTK_WIDGET(callback_window))) return;
     g_autoptr(GError) error = NULL;
     g_autoptr(GListModel) files = gtk_file_dialog_open_multiple_finish(GTK_FILE_DIALOG(source), result, &error);
 
@@ -661,6 +666,9 @@ GtkWindow *music_window_new(GtkApplication *app)
 
     music_config_init(&state->config);
     music_config_load(&state->config);
+
+    state->shuffle_enabled = state->config.shuffle;
+    state->repeat_mode = state->config.repeat ? 1 : 0;
 
     AdwApplicationWindow *window = ADW_APPLICATION_WINDOW(adw_application_window_new(app));
     state->window = GTK_WINDOW(window);
@@ -808,14 +816,10 @@ GtkWindow *music_window_new(GtkApplication *app)
     gtk_widget_set_tooltip_text(next_button, "Sonraki Parça");
 
     gtk_box_append(GTK_BOX(player_box), previous_button);
-    gtk_box_append(GTK_BOX(player_box), GTK_WIDGET(state->play_button));
-    gtk_box_append(GTK_BOX(player_box), next_button);
-
     gtk_box_append(GTK_BOX(player_box), GTK_WIDGET(state->shuffle_button));
-    gtk_box_append(GTK_BOX(player_box), previous_button);
     gtk_box_append(GTK_BOX(player_box), GTK_WIDGET(state->play_button));
-    gtk_box_append(GTK_BOX(player_box), next_button);
     gtk_box_append(GTK_BOX(player_box), GTK_WIDGET(state->repeat_button));
+    gtk_box_append(GTK_BOX(player_box), next_button);
 
     state->volume_scale = GTK_SCALE(gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 1, 0.01));
     gtk_widget_set_size_request(GTK_WIDGET(state->volume_scale), 120, -1);
